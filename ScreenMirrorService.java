@@ -46,11 +46,12 @@ public class ScreenMirrorService extends Service {
 
         createNotificationChannel();
 
-        mirrorHelper = new ScreenMirrorHelper();
-        mirrorHelper.onCreate(this);
-            // ✅ TAMBAHKAN INI:
+        mirrorHelper = ServiceController.getScreenMirrorHelper();
+
+if (mirrorHelper == null) {
+    mirrorHelper = new ScreenMirrorHelper();
+    mirrorHelper.onCreate(this);
     ServiceController.setScreenMirrorHelper(mirrorHelper);
-    ServiceController.setScreenMirrorService(this);
     
     Log.d(TAG, "✅ ServiceController: AgentService=" + 
         (ServiceController.isAgentServiceAvailable() ? "✅" : "❌") +
@@ -60,7 +61,7 @@ public class ScreenMirrorService extends Service {
         // ✅ JANGAN reset AgentService di sini
         // ScreenMirrorHelper.setAgentService(null); // HAPUS INI!
     }
-
+}
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "📡 onStartCommand");
@@ -353,7 +354,9 @@ public class ScreenMirrorService extends Service {
     public static MediaProjection getMediaProjection() {
         return sMediaProjection;
     }
-
+public static void setMediaProjection(MediaProjection projection) {
+    sMediaProjection = projection;
+}
     @Override
     public void onDestroy() {
         super.onDestroy();
